@@ -342,15 +342,21 @@ def iterative_sampling_tokens(
 
         if getattr(protein, track) is None:
             # We need to sample the entire track.
-            total_to_sample.append(_get_non_special_tokens(protein, tokenizers))
-            continue
+            num_sampling_steps = _get_non_special_tokens(protein, tokenizers)
+        else:
+            masked = _get_masked_positions(
+                track,
+                getattr(protein, track),
+                getattr(tokenizers, track).mask_token_id,
+            )
+            num_sampling_steps = torch.sum(masked).item()
 
-        masked = _get_masked_positions(
-            track,
-            getattr(protein, track),
-            getattr(tokenizers, track).mask_token_id,
-        )
-        total_to_sample.append(torch.sum(masked).item())
+        total_to_sample.append(num_sampling_steps)
+
+        # Users might over-specify the number of sampling steps for a given prompt
+        # TODO: Give a warning about mismatched num_steps and number of masks.
+        if (num_sampling_steps > 0) and (num_sampling_steps < config.num_steps):
+            config.num_steps = int(num_sampling_steps)
 
     # Different prompts may ask for different number of decoding steps.
     # For now, we simply run the max number of steps.
@@ -408,7 +414,7 @@ def iterative_sampling_tokens(
                 # that of the prompt, which may or may not be padded, depending on
                 # whether the padding was done locally with the open source model
                 # (where per_prompt_cur_sampled is already padded) or by
-                # BatchedForwardRunner (where per_prompt_cur_sampled is not padded).
+                # BatchedESM3ModelRunner (where per_prompt_cur_sampled is not padded).
                 len(per_prompt_cur_sampled),
             )
 
