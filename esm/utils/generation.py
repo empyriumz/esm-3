@@ -325,7 +325,7 @@ def iterative_sampling_tokens(
     devices = set([t.device for t in input_tokens])
     if len(devices) > 1:
         raise AttributeError(f"Input tokens on multiple devices {devices}")
-
+    # create a copy of input tokens to avoid modifying the input.
     sampled_tokens = [attr.evolve(tokens) for tokens in input_tokens]
 
     # Clear structure tokens if user would like to condition only on coordinates.

@@ -3,7 +3,7 @@ from esm.utils.constants import esm3 as C
 
 
 class StructureTokenizer(EsmTokenizerBase):
-    """A convenince class for accessing special token ids of
+    """A convenience class for accessing special token ids of
     the StructureTokenEncoder and StructureTokenDecoder."""
 
     def __init__(self, codebook_size: int = C.VQVAE_CODEBOOK_SIZE):
