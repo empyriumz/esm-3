@@ -27,7 +27,7 @@ dependencies = [
   "transformers",
   "ipython",
   "einops",
-  "biotite==0.41.2",
+  "biotite",
   "msgpack-numpy",
   "biopython",
   "scikit-learn",

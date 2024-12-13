@@ -389,7 +389,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             residue_annotation_tokens,
         )
         x, embedding = self.transformer(x, sequence_id, affine, affine_mask, chain_id)
-        return self.output_heads(x, embedding)
+        return x, self.output_heads(x, embedding)
 
     # The following methods are for the ESM3InferenceClient interface
     def generate(self, input: ProteinType, config: GenerationConfig) -> ProteinType:
@@ -545,7 +545,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             if device.type == "cuda"
             else contextlib.nullcontext(),
         ):
-            output = self.forward(
+            x, output = self.forward(
                 sequence_tokens=input.sequence,
                 structure_tokens=input.structure,
                 ss8_tokens=input.secondary_structure,
@@ -576,7 +576,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             residue_annotation_logits=output.residue_logits
             if config.residue_annotations
             else None,
-            embeddings=output.embeddings if config.return_embeddings else None,
+            embeddings=x if config.return_embeddings else None,
         )
 
     def forward_and_sample(
