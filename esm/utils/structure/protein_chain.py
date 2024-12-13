@@ -15,7 +15,6 @@ import torch
 from Bio.Data import PDBData
 from biotite.application.dssp import DsspApp
 from biotite.database import rcsb
-from biotite.structure.io.npz import NpzFile
 from biotite.structure.io.pdb import PDBFile
 from cloudpathlib import CloudPath
 from scipy.spatial.distance import pdist, squareform
@@ -216,17 +215,6 @@ class ProteinChain:
         np.fill_diagonal(contacts, -1)
         return contacts
 
-    def to_npz(self, path: PathOrBuffer):
-        f = NpzFile()
-        f.set_structure(self.atom_array)
-        f.write(path)
-
-    def to_npz_string(self):
-        f = NpzFile()
-        f.set_structure(self.atom_array)
-        buf = io.BytesIO()
-        f.write(buf)
-        return buf.getvalue()
 
     def to_structure_encoder_inputs(
         self,
