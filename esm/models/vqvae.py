@@ -87,10 +87,7 @@ class PairwisePredictionHead(nn.Module):
 
         prod = q[:, None, :, :] * k[:, :, None, :]
         diff = q[:, None, :, :] - k[:, :, None, :]
-        x_2d = [
-            prod,
-            diff,
-        ]
+        x_2d = [prod, diff]
         if pairwise is not None:
             x_2d.append(pairwise)
         x = torch.cat(x_2d, dim=-1)
@@ -253,7 +250,7 @@ class StructureTokenEncoder(nn.Module):
 
         z = self.relative_positional_embedding(res_idxs[:, 0], res_idxs)
 
-        z, _ = self.transformer.forward(
+        z, _, _ = self.transformer.forward(
             x=z,
             sequence_id=knn_sequence_id,
             affine=affine,
@@ -289,11 +286,7 @@ class StructureTokenEncoder(nn.Module):
         with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=False):
             ca = coords[..., 1, :]
             edges, edge_mask = knn_graph(
-                ca,
-                coord_mask,
-                padding_mask,
-                sequence_id,
-                no_knn=knn,
+                ca, coord_mask, padding_mask, sequence_id, no_knn=knn
             )
 
         return edges, edge_mask
@@ -333,12 +326,7 @@ class StructureTokenEncoder(nn.Module):
 
 
 class StructureTokenDecoder(nn.Module):
-    def __init__(
-        self,
-        d_model,
-        n_heads,
-        n_layers,
-    ):
+    def __init__(self, d_model, n_heads, n_layers):
         super().__init__()
         self.decoder_channels = d_model
 
@@ -409,7 +397,7 @@ class StructureTokenDecoder(nn.Module):
 
         x = self.embed(structure_tokens)
         # !!! NOTE: Attention mask is actually unused here so watch out
-        x, _ = self.decoder_stack.forward(
+        x, _, _ = self.decoder_stack.forward(
             x, affine=None, affine_mask=None, sequence_id=sequence_id, chain_id=chain_id
         )
 

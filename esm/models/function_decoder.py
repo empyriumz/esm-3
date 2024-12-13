@@ -42,7 +42,7 @@ class FunctionTokenDecoderConfig:
     interpro_entry_list: str = field(default_factory=lambda: str(C.INTERPRO_ENTRY))
     # Path to keywords vocabulary.
     keyword_vocabulary_path: str = field(
-        default_factory=lambda: str(C.data_root() / C.KEYWORDS_VOCABULARY)
+        default_factory=lambda: str(C.data_root("esm3") / C.KEYWORDS_VOCABULARY)
     )
     # Whether to unpack LSH bits into single-bit tokens.
     unpack_lsh_bits: bool = True
@@ -167,13 +167,12 @@ class FunctionTokenDecoder(nn.Module):
             # Apply depth-position offset to use distinct vocabs. See __init__ for
             # explaination.
             vocab_offsets = self.config.function_token_vocab_size * torch.arange(
-                self.config.function_token_depth,
-                device=token_ids.device,
+                self.config.function_token_depth, device=token_ids.device
             )
             inputs = token_ids + vocab_offsets[None, :]
 
         embed = self.embedding(inputs)
-        encoding, _ = self.decoder(embed)
+        encoding, _, _ = self.decoder(embed)
         pooled = torch.mean(encoding, dim=1)
 
         return {name: head(pooled) for name, head in self.heads.items()}
@@ -251,8 +250,7 @@ class FunctionTokenDecoder(nn.Module):
                 annotations.append(annotation)
 
             annotations = merge_annotations(
-                annotations,
-                merge_gap_max=annotation_gap_merge_max,
+                annotations, merge_gap_max=annotation_gap_merge_max
             )
 
             # Drop very small annotations.

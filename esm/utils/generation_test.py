@@ -10,12 +10,12 @@ from evolutionaryscale.utils.env import ModelName
 from evolutionaryscale.utils.remote_inference.api_v1 import (
     ESM3RemoteModelInferenceClient,
 )
-from projects.forge.fastapi.utils.model import _load_esm3
+from projects.forge.fastapi.utils.model import _load_esm_model
 
 
 @pytest.fixture()
 def esm3_remote_inference_client():
-    model = _load_esm3(ModelName.ESM3_TINY_DEV, distributed_model=False)
+    model = _load_esm_model(ModelName.ESM3_TINY_DEV, distributed_model=False)
     client = ESM3RemoteModelInferenceClient(
         model,
         tokenizers=model.tokenizers,
@@ -97,9 +97,7 @@ def test_num_decoding_steps_more_than_mask_tokens_batched(esm3_remote_inference_
 
 @pytest.mark.gpu
 def test_encode_chainbreak_token(esm3_remote_inference_client):
-    protein = esm3_remote_inference_client.encode(
-        ESMProtein(sequence="MSTNP|KPQKK"),
-    )
+    protein = esm3_remote_inference_client.encode(ESMProtein(sequence="MSTNP|KPQKK"))
     assert isinstance(protein, ESMProteinTensor)
     assert protein.sequence is not None
     assert (
