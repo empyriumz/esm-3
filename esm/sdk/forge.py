@@ -1,4 +1,5 @@
-import asyncio
+import base64
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from typing import Sequence
 from urllib.parse import urljoin
@@ -22,7 +23,11 @@ from esm.sdk.api import (
     SamplingConfig,
     SamplingTrackConfig,
 )
-from esm.utils.misc import maybe_list, maybe_tensor
+from esm.utils.misc import (
+    deserialize_tensors,
+    maybe_list,
+    maybe_tensor,
+)
 from esm.utils.sampling import validate_sampling_config
 from esm.utils.types import FunctionAnnotation
 
@@ -90,7 +95,8 @@ class SequenceStructureForgeInferenceClient:
             return e
 
         return ESMProtein(
-            coordinates=maybe_tensor(data["coordinates"], convert_none_to_nan=True)
+            sequence=sequence,
+            coordinates=maybe_tensor(data["coordinates"], convert_none_to_nan=True),
         )
 
     def inverse_fold(
@@ -223,23 +229,18 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         """Forge supports auto-batching. So batch_generate() for the Forge client
         is as simple as running a collection of generate() in parallel using asyncio.
         """
-        loop = asyncio.get_event_loop()
-
-        async def _async_generate():
+        with ThreadPoolExecutor() as executor:
             futures = [
-                loop.run_in_executor(None, self.generate, protein, config)
+                executor.submit(self.generate, protein, config)
                 for protein, config in zip(inputs, configs)
             ]
-            return await asyncio.gather(*futures, return_exceptions=True)
-
-        results = loop.run_until_complete(_async_generate())
-
-        def _capture_exception(r):
-            if isinstance(r, BaseException) and not isinstance(r, ESMProteinError):
-                return ESMProteinError(500, str(r))
-            return r
-
-        return [_capture_exception(r) for r in results]
+            results = []
+            for future in futures:
+                try:
+                    results.append(future.result())
+                except Exception as e:
+                    results.append(ESMProteinError(500, str(e)))
+        return results
 
     def __generate_protein(
         self, input: ESMProtein, config: GenerationConfig
@@ -497,7 +498,10 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
     @retry_decorator
     def logits(
-        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+        self,
+        input: ESMProteinTensor,
+        config: LogitsConfig = LogitsConfig(),
+        return_bytes: bool = True,
     ) -> LogitsOutput | ESMProteinError:
         _validate_protein_tensor_input(input)
 
@@ -521,12 +525,18 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "function": config.function,
             "residue_annotations": config.residue_annotations,
             "return_embeddings": config.return_embeddings,
+            "return_hidden_states": config.return_hidden_states,
+            "ith_hidden_layer": config.ith_hidden_layer,
         }
 
         request = {"model": self.model, "inputs": req, "logits_config": logits_config}
-
         try:
-            data = self._post("logits", request, input.potential_sequence_of_concern)
+            data = self._post(
+                "logits",
+                request,
+                input.potential_sequence_of_concern,
+                return_bytes=return_bytes,
+            )
         except ESMProteinError as e:
             return e
 
@@ -534,6 +544,18 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             if "logits" in data and track in data["logits"]:
                 return maybe_tensor(data["logits"][track])
             return None
+
+        def _maybe_b64_decode(obj):
+            return (
+                deserialize_tensors(base64.b64decode(obj))
+                if return_bytes and obj is not None
+                else obj
+            )
+
+        logits = _maybe_b64_decode(data["logits"])
+        data["logits"] = dict(logits) if logits is not None else logits
+        data["embeddings"] = _maybe_b64_decode(data["embeddings"])
+        data["hidden_states"] = _maybe_b64_decode(data["hidden_states"])
 
         output = LogitsOutput(
             logits=ForwardTrackData(
@@ -545,17 +567,26 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             ),
             embeddings=maybe_tensor(data["embeddings"]),
             residue_annotation_logits=_maybe_logits("residue_annotation"),
+            hidden_states=maybe_tensor(data["hidden_states"]),
         )
 
         return output
 
-    def _post(self, endpoint, request, potential_sequence_of_concern):
+    def _post(
+        self,
+        endpoint,
+        request,
+        potential_sequence_of_concern,
+        return_bytes: bool = False,
+    ):
         request["potential_sequence_of_concern"] = potential_sequence_of_concern
-
+        headers = dict(self.headers)
+        if return_bytes:
+            headers["return-bytes"] = "true"
         response = requests.post(
             urljoin(self.url, f"/api/v1/{endpoint}"),
             json=request,
-            headers=self.headers,
+            headers=headers,
             timeout=self.request_timeout,
         )
 

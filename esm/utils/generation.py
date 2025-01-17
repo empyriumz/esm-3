@@ -53,6 +53,9 @@ def _trim_sequence_tensor_dataclass(o: Any, sequence_len: int):
         elif isinstance(v, torch.Tensor):
             # Trim padding.
             sliced[k] = v[:, :sequence_len]
+        elif isinstance(v, tuple) and all(isinstance(t, torch.Tensor) for t in v):
+            # Trim padding for a list of tensors
+            sliced[k] = [t[:, :sequence_len] for t in v]
         elif attr.has(v.__class__):
             # Recursively slice the child attribute.
             sliced[k] = _trim_sequence_tensor_dataclass(v, sequence_len)
@@ -601,7 +604,10 @@ def _sample_per_prompt(
             tokens_dir["sasa"] = sasa_value
 
             probs = sasa_logits.softmax(dim=-1)
-            entropy = -(probs * sasa_logits.log_softmax(-1)).sum(-1)
+            # Note(tjia): sasa_logits can have -inf because of invalid ids, so
+            # probs * sasa_logits.log_softmax(-1) is nan. We need to set
+            # those positions to 0 to get the correct entropy value
+            entropy = -(torch.nan_to_num(probs * sasa_logits.log_softmax(-1))).sum(-1)
 
             track_sampling_metadata_dir["sasa"] = {"entropy": entropy}
 

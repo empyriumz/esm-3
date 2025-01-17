@@ -1,11 +1,15 @@
+import os
+
 import torch
 
 from esm.models.esm3 import ESM3
+from esm.sdk import client
 from esm.sdk.api import (
     ESM3InferenceClient,
     ESMProtein,
     ESMProteinError,
     ESMProteinTensor,
+    ForwardAndSampleOutput,
     GenerationConfig,
     LogitsConfig,
     LogitsOutput,
@@ -102,12 +106,16 @@ def main(client: ESM3InferenceClient):
     protein.function_annotations = None
     protein.sasa = None
     protein_tensor = client.encode(protein)
-    logits_output = client.logits(protein_tensor, LogitsConfig(sequence=True))
+    logits_output = client.logits(
+        protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
+    )
     assert isinstance(
         logits_output, LogitsOutput
     ), f"LogitsOutput was expected but got {logits_output}"
     assert (
-        logits_output.logits is not None and logits_output.logits.sequence is not None
+        logits_output.logits is not None
+        and logits_output.logits.sequence is not None
+        and logits_output.embeddings is not None
     )
 
     # Chain of Thought (Function -> Secondary Structure -> Structure -> Sequence)
@@ -191,4 +199,12 @@ def main(client: ESM3InferenceClient):
 
 
 if __name__ == "__main__":
-    main(ESM3.from_pretrained("esm3_sm_open_v1"))
+    if os.environ.get("ESM_API_KEY", ""):
+        print("ESM_API_KEY found. Trying to use model from Forge...")
+        main(client())
+    else:
+        print("No ESM_API_KEY found. Trying to load model locally...")
+        print(
+            "TO try this script with a Forge API, please run ESM_API_KEY=your_api_key python esm3.py"
+        )
+        main(ESM3.from_pretrained("esm3_sm_open_v1"))
