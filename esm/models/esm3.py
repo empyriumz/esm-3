@@ -531,7 +531,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             if device.type == "cuda"
             else contextlib.nullcontext(),
         ):
-            x, output = self.forward(
+            output = self.forward(
                 sequence_tokens=input.sequence,
                 structure_tokens=input.structure,
                 ss8_tokens=input.secondary_structure,
@@ -562,7 +562,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             residue_annotation_logits=output.residue_logits
             if config.residue_annotations
             else None,
-            embeddings=x if config.return_embeddings else None,
+            embeddings=output.embeddings if config.return_embeddings else None,
         )
 
     def forward_and_sample(
