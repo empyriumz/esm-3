@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from functools import partial
-from typing import Callable
+from typing import Callable, Optional, Dict, Any
 
 import attr
 import einops
@@ -64,6 +64,7 @@ class ESMOutput:
     function_logits: torch.Tensor
     residue_logits: torch.Tensor
     embeddings: torch.Tensor
+    get_outputs: Optional[Dict[str, Any]] = None
 
 
 class EncodeInputs(nn.Module):

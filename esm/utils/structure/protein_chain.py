@@ -416,7 +416,7 @@ class ProteinChain:
         confidence: np.ndarray | torch.Tensor | None = None,
     ):
         if isinstance(atom37_positions, torch.Tensor):
-            atom37_positions = atom37_positions.cpu().numpy()
+            atom37_positions = atom37_positions.float().cpu().numpy()
             if atom37_positions.ndim == 4:
                 if atom37_positions.shape[0] != 1:
                     raise ValueError(
