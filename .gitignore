@@ -2,3 +2,6 @@ esm.egg-info
 *.pyc
 .vscode
 .aidigestignore
+# pixi environments
+.pixi
+*.egg-info

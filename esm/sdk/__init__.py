@@ -1,6 +1,7 @@
 import os
 
 from esm.sdk.forge import ESM3ForgeInferenceClient
+from esm.utils.forge_context_manager import ForgeBatchExecutor
 
 # Note: please do not import ESM3SageMakerClient here since that requires AWS SDK.
 
@@ -20,3 +21,15 @@ def client(
             Default is wait indefinitely.
     """
     return ESM3ForgeInferenceClient(model, url, token, request_timeout)
+
+
+def batch_executor(max_attempts: int = 10):
+    """
+    Args:
+        max_attempts: Maximum number of attempts to make before giving up.
+
+    Usage:
+        with batch_executor() as executor:
+            executor.execute_batch(fn, **kwargs)
+    """
+    return ForgeBatchExecutor(max_attempts)

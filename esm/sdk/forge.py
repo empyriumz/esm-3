@@ -1,5 +1,6 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from functools import wraps
 from typing import Sequence
 from urllib.parse import urljoin
@@ -31,6 +32,8 @@ from esm.utils.misc import (
 from esm.utils.sampling import validate_sampling_config
 from esm.utils.types import FunctionAnnotation
 
+skip_retries_var = ContextVar("skip_retries", default=False)
+
 
 def _list_to_function_annotations(l) -> list[FunctionAnnotation] | None:
     if l is None or len(l) <= 0:
@@ -57,9 +60,13 @@ def log_retry_attempt(retry_state):
 
 
 def _validate_protein_tensor_input(input):
+    if isinstance(input, ESMProteinError):
+        raise ValueError(
+            f"Input must be an ESMProteinTensor instance, but received an ESMProteinError instead: {input.error_code} {input.error_msg}"
+        )
     if not isinstance(input, ESMProteinTensor):
         raise ValueError(
-            "Input must be an ESMProteinTensor instance. "
+            f"Input must be an ESMProteinTensor instance, but received {type(input)} instead. "
             "Use encode() API to encode an ESMProtein into ESMProteinTensor."
         )
 
@@ -68,14 +75,25 @@ class SequenceStructureForgeInferenceClient:
     def __init__(
         self,
         url: str = "https://forge.evolutionaryscale.ai",
+        model: str | None = None,
         token: str = "",
         request_timeout: int | None = None,
     ):
+        """
+        Forge client for folding and inverse folding between sequence and structure spaces.
+
+        Args:
+            url: URL of the Forge server.
+            model: Name of the model to be used for folding / inv folding.
+            token: API token.
+            request_timeout: Override the system default request timeout, in seconds.
+        """
         if token == "":
             raise RuntimeError(
                 "Please provide a token to connect to Forge via token=YOUR_API_TOKEN_HERE"
             )
         self.url = url
+        self.model = model
         self.token = token
         self.headers = {"Authorization": f"Bearer {self.token}"}
         self.request_timeout = request_timeout
@@ -86,9 +104,19 @@ class SequenceStructureForgeInferenceClient:
         potential_sequence_of_concern: bool,
         model_name: str | None = None,
     ) -> ESMProtein | ESMProteinError:
+        """Predict coordinates for a protein sequence.
+
+        Args:
+            sequence: Protein sequence to be folded.
+            potential_sequence_of_concern: Self disclosed potential_of_concern bit.
+                This bit is largely ignored by the fold() endpoint.
+            model_name: Override the client level model name if needed.
+        """
         request = {"sequence": sequence}
         if model_name is not None:
             request["model"] = model_name
+        elif self.model is not None:
+            request["model"] = self.model
         try:
             data = self._post("fold", request, potential_sequence_of_concern)
         except ESMProteinError as e:
@@ -106,6 +134,17 @@ class SequenceStructureForgeInferenceClient:
         potential_sequence_of_concern: bool,
         model_name: str | None = None,
     ) -> ESMProtein | ESMProteinError:
+        """Generate protein sequence from its structure.
+
+        This endpoint is only supported by generative models like ESM3.
+
+        Args:
+            coordinates: Protein sequence coordinates to be inversely folded.
+            config: Configurations related to inverse folding generation.
+            potential_sequence_of_concern: Self disclosed potential_of_concern bit.
+                Requires special permission to use.
+            model_name: Override the client level model name if needed.
+        """
         inverse_folding_config = {
             "invalid_ids": config.invalid_ids,
             "temperature": config.temperature,
@@ -116,6 +155,8 @@ class SequenceStructureForgeInferenceClient:
         }
         if model_name is not None:
             request["model"] = model_name
+        elif self.model is not None:
+            request["model"] = self.model
         try:
             data = self._post("inverse_fold", request, potential_sequence_of_concern)
         except ESMProteinError as e:
@@ -186,6 +227,8 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
         @wraps(func)
         def wrapper(instance, *args, **kwargs):
+            if skip_retries_var.get():
+                return func(instance, *args, **kwargs)
             retry_decorator = retry(
                 retry=retry_if_result(retry_if_specific_error),
                 wait=wait_exponential(
@@ -203,6 +246,16 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
     @retry_decorator
     def generate(self, input: ProteinType, config: GenerationConfig) -> ProteinType:
+        if isinstance(input, ESMProteinError):
+            raise ValueError(
+                f"Input must be an ESMProtein or ESMProteinTensor instance, but received an ESMProteinError instead: {input.error_code} {input.error_msg}"
+            )
+        assert isinstance(input, ESMProtein) or isinstance(input, ESMProteinTensor)
+        if input.sequence is not None and config.num_steps > len(input.sequence):
+            config.num_steps = len(input.sequence)
+            print(
+                "Warning: num_steps cannot exceed sequence length. Setting num_steps to sequence length."
+            )
         if isinstance(input, ESMProtein):
             output = self.__generate_protein(input, config)
         elif isinstance(input, ESMProteinTensor):

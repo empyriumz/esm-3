@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from copy import deepcopy
 from typing import List, Sequence
 
 import attr
@@ -108,7 +109,9 @@ class ESMProtein(ProteinType):
             secondary_structure=None,
             sasa=None,
             function_annotations=None,
-            coordinates=torch.tensor(protein_complex.atom37_positions),
+            coordinates=torch.tensor(
+                protein_complex.atom37_positions, dtype=torch.float32
+            ),
         )
 
     def to_pdb(self, pdb_path: PathOrBuffer) -> None:
@@ -163,6 +166,10 @@ class ESMProtein(ProteinType):
             )
             pred_chains.append(pred_chain)
         return ProteinComplex.from_chains(pred_chains)
+
+    def copy(self) -> "ESMProtein":
+        """Create a deep copy of the ESMProtein instance."""
+        return deepcopy(self)
 
 
 @define
@@ -244,6 +251,10 @@ class ESMProteinTensor(ProteinType):
             ).to(device),
         )
 
+    def copy(self) -> ESMProteinTensor:
+        """Create a deep copy of the ESMProteinTensor instance."""
+        return deepcopy(self)
+
 
 @define
 class ESMProteinError(Exception, ProteinType):
@@ -255,7 +266,8 @@ class ESMProteinError(Exception, ProteinType):
 @define
 class GenerationConfig:
     track: str = ""
-    invalid_ids: Sequence[int] = []
+    # By default avoid sampling the amino acid "X"
+    invalid_ids: Sequence[int] = [24]
     # Controls the number of tokens to unmask during each round of iterative generation.
     schedule: str = attr.field(
         validator=attr.validators.in_(["cosine", "linear"]), default="cosine"
@@ -264,11 +276,11 @@ class GenerationConfig:
     # "random" will unmask a correct number of tokens randomly.
     # "entropy" will unmask the tokens with the lowest logit entropy first.
     strategy: str = attr.field(
-        validator=attr.validators.in_(["random", "entropy"]), default="entropy"
+        validator=attr.validators.in_(["random", "entropy"]), default="random"
     )
-    # Set this to a higher value for better generation results.
+    # Setting default to 20, as there is diminishing return for decoding steps more than 20.
     # Note that this needs to be less than or equal to the sequence length.
-    num_steps: int = 1
+    num_steps: int = 20
     temperature: float = 1.0
     temperature_annealing: bool = False
     top_p: float = 1.0
@@ -338,6 +350,11 @@ class ForwardTrackData:
 class LogitsConfig:
     # Logits.
     sequence: bool = False
+
+    # Note that getting logits for tracks other than sequence
+    # are not supported by Forge today, due to their impractical
+    # data sizes.
+    # These are of course supported when running local OSS models.
     structure: bool = False
     secondary_structure: bool = False
     sasa: bool = False
