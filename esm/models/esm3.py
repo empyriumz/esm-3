@@ -64,6 +64,7 @@ class ESMOutput:
     function_logits: torch.Tensor
     residue_logits: torch.Tensor
     embeddings: torch.Tensor
+    hidden_states: Optional[list[torch.Tensor]] = None
     get_outputs: Optional[Dict[str, Any]] = None
 
 
@@ -166,7 +167,7 @@ class OutputHeads(nn.Module):
         self.function_head = RegressionHead(d_model, 260 * 8)
         self.residue_head = RegressionHead(d_model, 1478)
 
-    def forward(self, x: torch.Tensor, embed: torch.Tensor) -> ESMOutput:
+    def forward(self, x: torch.Tensor, embed: torch.Tensor, hidden_states: list[torch.Tensor]) -> ESMOutput:
         sequence_logits = self.sequence_head(x)
         structure_logits = self.structure_head(x)
         secondary_structure_logits = self.ss8_head(x)
@@ -183,7 +184,8 @@ class OutputHeads(nn.Module):
             sasa_logits=sasa_logits,
             function_logits=function_logits,
             residue_logits=residue_logits,
-            embeddings=embed,
+            embeddings=x, # custom hack, embed = layernorm(x)
+            hidden_states=hidden_states,
         )
 
 
@@ -377,10 +379,10 @@ class ESM3(nn.Module, ESM3InferenceClient):
             function_tokens,
             residue_annotation_tokens,
         )
-        x, embedding, _ = self.transformer(
+        x, embedding, hidden_states = self.transformer(
             x, sequence_id, affine, affine_mask, chain_id
         )
-        return self.output_heads(x, embedding)
+        return self.output_heads(x, embedding, hidden_states)
 
     # The following methods are for the ESM3InferenceClient interface
     def generate(self, input: ProteinType, config: GenerationConfig) -> ProteinType:
@@ -547,7 +549,10 @@ class ESM3(nn.Module, ESM3InferenceClient):
             )
 
         output = ESMOutput(
-            **{k: v.to(device).to(torch.float32) for k, v in vars(output).items()}
+            **{
+                k: v.to(device).to(torch.float32) if isinstance(v, torch.Tensor) else v
+                for k, v in vars(output).items()
+            }
         )
 
         return LogitsOutput(
@@ -564,6 +569,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             if config.residue_annotations
             else None,
             embeddings=output.embeddings if config.return_embeddings else None,
+            hidden_states=output.hidden_states if config.return_hidden_states else None,
         )
 
     def forward_and_sample(
